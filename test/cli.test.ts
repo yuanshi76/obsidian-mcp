@@ -138,3 +138,50 @@ test("doctor and recovery CLI commands operate on an explicit vault", async () =
   assert.equal((JSON.parse(restored.stdout) as { ok: boolean }).ok, true);
   assert.equal(await fs.readFile(target, "utf8"), "before");
 });
+
+test("serve --http accepts host/port overrides and rejects them outside serve", () => {
+  const parsed = parseArguments([
+    "serve",
+    "--http",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080",
+    "--vault",
+    "vault=/vault"
+  ]);
+  if (typeof parsed === "string") assert.fail("Expected parsed CLI options.");
+  assert.deepEqual(parsed.http, { host: "0.0.0.0", port: 8080 });
+  assert.deepEqual(parsed.canonicalArgs, [
+    "serve",
+    "--http",
+    "--host",
+    "0.0.0.0",
+    "--port",
+    "8080",
+    "--vault",
+    "vault=/vault"
+  ]);
+
+  assert.throws(
+    () => parseArguments(["doctor", "--http", "--vault", "vault=/vault"]),
+    (error: unknown) => {
+      assert.match(String(error), /only valid for the serve command/u);
+      return true;
+    }
+  );
+  assert.throws(
+    () => parseArguments(["serve", "--port", "0", "--http", "--vault", "vault=/vault"]),
+    (error: unknown) => {
+      assert.match(String(error), /--port requires a positive integer/u);
+      return true;
+    }
+  );
+  assert.throws(
+    () => parseArguments(["serve", "--port", "70000", "--http", "--vault", "vault=/vault"]),
+    (error: unknown) => {
+      assert.match(String(error), /valid TCP port between 1 and 65535/u);
+      return true;
+    }
+  );
+});
