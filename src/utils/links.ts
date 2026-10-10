@@ -94,7 +94,7 @@ function rewriteLinks(
         }
       );
       rewritten = rewritten.replace(
-        /(!?)\[([^\]]*)\]\((<)?([^)>\s]+(?:%20[^)>\s]*)*)(>)?\)/gu,
+        /(!?)\[([^\]]*)\]\((<)?([^)>\s]+)(>)?\)/gu,
         (
           whole,
           embed: string,
