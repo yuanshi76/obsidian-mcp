@@ -1,6 +1,6 @@
 {
   "name": "obsidian-mcp",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "A safe, local MCP server for working with Obsidian vaults",
   "type": "module",
   "main": "dist/main.js",
