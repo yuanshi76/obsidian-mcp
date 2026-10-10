@@ -18,6 +18,12 @@ RUN npm run build && npm prune --omit=dev
 # ---- production ----
 FROM node:24-alpine AS production
 WORKDIR /app
+# Runtime needs the node binary only. Stripping the bundled package managers
+# removes their vulnerable transitive deps (brace-expansion, ip-address,
+# undici — flagged by Trivy as HIGH/CRITICAL in the base image), shrinks the
+# attack surface, and cuts image size. HEALTHCHECK/CMD invoke node directly.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
+      /usr/local/bin/corepack /opt/yarn-*
 RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001
 USER appuser
 # package.json must ship: src/constants.ts reads it at startup for the version.
