@@ -24,7 +24,7 @@ services:
 
   mcp:
     build: .
-    image: ghcr.io/REPLACE-WITH-YOUR-OWNER/obsidian-mcp:latest
+    image: ghcr.io/yuanshi76/obsidian-mcp:latest
     restart: unless-stopped
     user: "1001:1001" # must match the uid that owns /srv/obsidian-vault
     env_file: [.env]
