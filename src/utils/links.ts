@@ -93,8 +93,11 @@ function rewriteLinks(
           return `${embed}[[${replacement}${anchor}${alias === undefined ? "" : `|${alias}`}]]`;
         }
       );
+      // The URL class already admits every character of the literal "%20",
+      // so a separate (?:%20…)* group cannot extend the language — it only
+      // adds nested-quantifier ambiguity (exponential backtracking, CWE-1333).
       rewritten = rewritten.replace(
-        /(!?)\[([^\]]*)\]\((<)?([^)>\s]+(?:%20[^)>\s]*)*)(>)?\)/gu,
+        /(!?)\[([^\]]*)\]\((<)?([^)>\s]+)(>)?\)/gu,
         (
           whole,
           embed: string,
