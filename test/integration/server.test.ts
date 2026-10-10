@@ -10,7 +10,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { TOOL_NAMES } from "../../src/tools/index.js";
 import { createVault } from "../helpers.js";
 
-test("modern stdio server advertises complete schemas and executes all twelve tools", async () => {
+test("modern stdio server advertises complete schemas and executes all fourteen tools", async () => {
   const root = await createVault("obsidian-mcp-integration-");
   await fs.writeFile(path.join(root, "Source.md"), "# Source\n\n#old\n");
   await fs.writeFile(
@@ -121,11 +121,35 @@ test("modern stdio server advertises complete schemas and executes all twelve to
       mode: "tag"
     });
     assert.equal(search.count, 1);
-    await success(client, "obsidian_delete_note", {
+    const deleted = await success(client, "obsidian_delete_note", {
       vault: "test",
       path: "folder/New.md",
       mode: "trash"
     });
+    const recovery = await success(client, "obsidian_recovery_list", { vault: "test" });
+    const entries = recovery.entries as { id: string; state: string }[];
+    assert.ok(Array.isArray(entries));
+    assert.ok(entries.some((entry) => entry.id === deleted.transaction_id));
+    const unconfirmedRestore = await client.callTool({
+      name: "obsidian_recovery_restore",
+      arguments: { vault: "test", transaction_id: deleted.transaction_id }
+    });
+    assert.equal(unconfirmedRestore.isError, true);
+    assert.match(
+      textOf(unconfirmedRestore),
+      /confirm_transaction_id is required and must repeat transaction_id exactly/u
+    );
+    const restored = await success(client, "obsidian_recovery_restore", {
+      vault: "test",
+      transaction_id: deleted.transaction_id,
+      confirm_transaction_id: deleted.transaction_id
+    });
+    assert.equal(typeof restored.transaction_id, "string");
+    const revived = await success(client, "obsidian_read_note", {
+      vault: "test",
+      path: "folder/New.md"
+    });
+    assert.match(String(revived.content), /new note/u);
 
     const escaped = await client.callTool({
       name: "obsidian_read_note",
