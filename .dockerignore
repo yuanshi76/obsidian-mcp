@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.github
+.npm-cache
+.env
+coverage
+test
+docs
+evaluations
+*.log
+Dockerfile
+docker-compose.yml
+.dockerignore
+.env.example
