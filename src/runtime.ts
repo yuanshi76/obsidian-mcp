@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 
 import type { Logger } from "./utils/logger.js";
 import { TransactionManager, type TransactionOptions } from "./utils/transaction.js";
@@ -40,14 +40,25 @@ export class Runtime {
     const output = [];
     for (const id of this.registry.ids()) {
       const service = this.forVault(id);
-      await fs.access(service.vault.root);
+      const root = service.vault.root;
+      const readable = await canAccess(root, fsConstants.R_OK);
+      const writable = await canAccess(root, fsConstants.W_OK);
       output.push({
         vault: id,
-        readable: true,
-        writable: true,
+        readable,
+        writable,
         recovery_entries: (await service.transactions.listRecovery()).length
       });
     }
     return output;
+  }
+}
+
+async function canAccess(target: string, mode: number): Promise<boolean> {
+  try {
+    await fs.access(target, mode);
+    return true;
+  } catch {
+    return false;
   }
 }

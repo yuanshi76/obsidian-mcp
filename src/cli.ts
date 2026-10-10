@@ -10,6 +10,7 @@ import {
   MAX_VAULTS,
   SERVER_VERSION
 } from "./constants.js";
+import { parseHttpEnvironment, serveHttp } from "./http.js";
 import { Runtime } from "./runtime.js";
 import { buildServer } from "./server.js";
 import {
@@ -33,6 +34,7 @@ interface CliOptions {
   canonicalArgs: string[];
   warnings: Diagnostic[];
   recoveryId?: string;
+  http?: { host?: string; port?: number };
 }
 
 export async function runCli(args: string[] = process.argv.slice(2)): Promise<void> {
@@ -58,8 +60,13 @@ export async function runCli(args: string[] = process.argv.slice(2)): Promise<vo
   await runtime.initialize();
 
   if (parsed.command === "doctor") {
+    const vaults = await runtime.doctor();
     process.stdout.write(
-      `${JSON.stringify({ ok: true, vaults: await runtime.doctor() }, null, 2)}\n`
+      `${JSON.stringify(
+        { ok: vaults.every((entry) => entry.readable && entry.writable), vaults },
+        null,
+        2
+      )}\n`
     );
     return;
   }
@@ -101,6 +108,43 @@ export async function runCli(args: string[] = process.argv.slice(2)): Promise<vo
     process.stdout.write(
       `${JSON.stringify({ ok: true, transaction_id: transactionId }, null, 2)}\n`
     );
+    return;
+  }
+
+  if (parsed.http !== undefined) {
+    const cfg = parseHttpEnvironment(process.env, {
+      legacy: parsed.legacy,
+      ...(parsed.http.host === undefined ? {} : { host: parsed.http.host }),
+      ...(parsed.http.port === undefined ? {} : { port: parsed.http.port })
+    });
+    if (cfg.token === undefined) {
+      writeDiagnostic("warning", {
+        code: "HTTP_UNAUTHENTICATED",
+        problem:
+          "The HTTP server is running without bearer authentication because MCP_ALLOW_UNAUTHENTICATED=1.",
+        detected: "MCP_AUTH_TOKEN is not set.",
+        fix: [
+          "Remove MCP_ALLOW_UNAUTHENTICATED=1 and set MCP_AUTH_TOKEN before exposing the server on a network.",
+          "Keep the bind address on 127.0.0.1 until authentication is enabled."
+        ],
+        helpAnchor: "diagnostic-reference"
+      });
+    }
+    const handle = await serveHttp(runtime, logger, cfg);
+    logger.log("info", "server_started", {
+      transport: "http",
+      vaults: registry.ids(),
+      version: SERVER_VERSION
+    });
+    let closing = false;
+    const close = async (signal: string): Promise<void> => {
+      if (closing) return;
+      closing = true;
+      logger.log("info", "server_stopping", { signal });
+      await handle.close();
+    };
+    process.once("SIGINT", () => void close("SIGINT"));
+    process.once("SIGTERM", () => void close("SIGTERM"));
     return;
   }
 
@@ -196,10 +240,18 @@ export function parseArguments(args: string[]): CliOptions | "help" | "version" 
   let legacy: CliOptions["legacy"] = "serve";
   let recoveryId: string | undefined;
   let sawVaultFlag = false;
+  let httpRequested = false;
+  let httpHost: string | undefined;
+  let httpPort: number | undefined;
   const canonicalArgs = commandArgs(command);
   while (args.length > 0) {
     const flag = args.shift();
     if (flag === undefined) break;
+    if (flag === "--http") {
+      httpRequested = true;
+      canonicalArgs.push(flag);
+      continue;
+    }
     if (!flag.startsWith("--")) {
       throw usageError(
         sawVaultFlag ? "CLI_MIXED_CONFIG_SYNTAX" : "CLI_UNEXPECTED_POSITIONAL_ARGUMENT",
@@ -259,6 +311,14 @@ export function parseArguments(args: string[]): CliOptions | "help" | "version" 
         "Use '--legacy serve' for broad compatibility or '--legacy reject' for modern-only clients.",
         "legacy-mcp-clients"
       );
+    } else if (flag === "--host") {
+      if (command !== "serve") throw httpOptionOutsideServeError(flag);
+      httpHost = value;
+      canonicalArgs.push(flag, value);
+    } else if (flag === "--port") {
+      if (command !== "serve") throw httpOptionOutsideServeError(flag);
+      httpPort = parsePort(value, flag);
+      canonicalArgs.push(flag, String(httpPort));
     } else if (flag === "--id") {
       recoveryId = value;
       canonicalArgs.push(flag, value);
@@ -269,6 +329,9 @@ export function parseArguments(args: string[]): CliOptions | "help" | "version" 
         "--recovery-max-bytes",
         "--log-level",
         "--legacy",
+        "--http",
+        "--host",
+        "--port",
         "--id"
       ]);
       throw usageError(
@@ -279,6 +342,15 @@ export function parseArguments(args: string[]): CliOptions | "help" | "version" 
         "diagnostic-reference"
       );
     }
+  }
+  if (command !== "serve" && (httpRequested || httpHost !== undefined || httpPort !== undefined)) {
+    throw usageError(
+      "CLI_HTTP_SERVE_ONLY",
+      "The HTTP transport options are only valid for the serve command.",
+      commandArgs(command).join(" "),
+      "Move --http, --host, and --port to a 'serve' invocation.",
+      "diagnostic-reference"
+    );
   }
   if (vaults.length === 0) {
     throw usageError(
@@ -307,7 +379,15 @@ export function parseArguments(args: string[]): CliOptions | "help" | "version" 
     legacy,
     canonicalArgs,
     warnings: [],
-    ...(recoveryId === undefined ? {} : { recoveryId })
+    ...(recoveryId === undefined ? {} : { recoveryId }),
+    ...(httpRequested
+      ? {
+          http: {
+            ...(httpHost === undefined ? {} : { host: httpHost }),
+            ...(httpPort === undefined ? {} : { port: httpPort })
+          }
+        }
+      : {})
   };
 }
 
@@ -395,6 +475,30 @@ function parsePositiveInteger(value: string, flag: string): number {
     );
   }
   return parsed;
+}
+
+function parsePort(value: string, flag: string): number {
+  const parsed = parsePositiveInteger(value, flag);
+  if (parsed > 65_535) {
+    throw usageError(
+      "CLI_INVALID_PORT",
+      `${flag} must be a valid TCP port between 1 and 65535.`,
+      value,
+      "Choose a port in the range 1-65535.",
+      "diagnostic-reference"
+    );
+  }
+  return parsed;
+}
+
+function httpOptionOutsideServeError(flag: string): UserFacingError {
+  return usageError(
+    "CLI_HTTP_SERVE_ONLY",
+    `Option '${flag}' is only valid with 'serve'.`,
+    flag,
+    ["Combine --http, --host, and --port with the serve command only."],
+    "diagnostic-reference"
+  );
 }
 
 function expandLegacyPath(value: string): string {
@@ -541,6 +645,7 @@ function helpText(): string {
 
 Usage:
   obsidian-mcp serve --vault <id>=<absolute-path> [--vault ...] [--legacy serve|reject]
+  obsidian-mcp serve --http [--host <bind-host>] [--port <bind-port>] --vault <id>=<absolute-path>
   obsidian-mcp doctor --vault <id>=<absolute-path> [--vault ...]
   obsidian-mcp recovery list --vault <id>=<absolute-path> [--vault ...]
   obsidian-mcp recovery restore --vault <id>=<absolute-path> --id <transaction-id>
@@ -554,7 +659,17 @@ Options:
   --recovery-max-bytes <bytes> Recovery storage limit (default: 1073741824)
   --log-level <level>          error, warn, info, or debug
   --legacy <mode>              2025-era client handling: serve (default) or reject
+  --http                       Serve Streamable HTTP instead of stdio
+  --host <bind-host>           HTTP bind address for --http (default: MCP_HTTP_HOST or 127.0.0.1)
+  --port <bind-port>           HTTP bind port for --http (default: MCP_HTTP_PORT or 3000)
   --help                       Show help
   --version                    Show version
+
+HTTP environment (with --http):
+  MCP_PUBLIC_URL               Required public URL of this server, e.g. https://mcp.example.com
+  MCP_AUTH_TOKEN               Required static bearer token (minimum 32 characters)
+  MCP_ALLOW_UNAUTHENTICATED    Set to 1 to serve without authentication (development only)
+  MCP_MAX_BODY_BYTES           Hard request body limit (default: 16777216)
+  MCP_RATE_LIMIT_PER_MINUTE    Requests per minute per token (default: 120; 0 disables)
 `;
 }

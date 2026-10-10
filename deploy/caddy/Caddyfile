@@ -1,0 +1,21 @@
+# Caddy TLS-termination sample for the obsidian-mcp + WebDAV single-host layout.
+# Replace the two hostnames with yours; Caddy provisions and renews HTTPS
+# certificates automatically (DNS for both names must point at this host).
+#
+# Run Caddy with network_mode: host (see docker-compose.yml), so it reaches the
+# services through their loopback port mappings — the MCP container never needs
+# a public bind.
+#
+# IMPORTANT: Caddy preserves the original Host header by default. obsidian-mcp
+# validates Host/Origin against the MCP_PUBLIC_URL hostname as DNS-rebinding
+# protection, so do NOT add a `header_up Host` rewrite here.
+
+mcp.example.com {
+	reverse_proxy 127.0.0.1:3000
+}
+
+dav.example.com {
+	# hacdias/webdav serves under its own path layout; Remotely Save points at
+	# https://dav.example.com/<user>/... per your plugin configuration.
+	reverse_proxy 127.0.0.1:6065
+}

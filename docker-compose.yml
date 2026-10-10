@@ -1,0 +1,57 @@
+# Single-host deployment: one vault directory, two readers/writers.
+# The vault lives on the HOST and is bind-mounted into BOTH containers, so
+# obsidian-mcp keeps its native filesystem transaction guarantees (fsync,
+# atomic rename, lock files) while hacdias/webdav serves the same bytes.
+#
+# Required .env (copy .env.example):
+#   MCP_PUBLIC_URL   e.g. https://mcp.example.com
+#   MCP_AUTH_TOKEN   bearer token, at least 32 characters
+services:
+  webdav:
+    image: hacdias/webdav:latest
+    restart: unless-stopped
+    user: "1001:1001" # same uid as the mcp service below
+    volumes:
+      - /srv/obsidian-vault:/data # ← must be the SAME host directory as mcp:/vault
+      - ./webdav-config.yml:/config.yml:ro
+    ports:
+      - "127.0.0.1:6065:6065"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:6065/ || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  mcp:
+    build: .
+    image: ghcr.io/REPLACE-WITH-YOUR-OWNER/obsidian-mcp:latest
+    restart: unless-stopped
+    user: "1001:1001" # must match the uid that owns /srv/obsidian-vault
+    env_file: [.env]
+    volumes:
+      - /srv/obsidian-vault:/vault # ← same host directory, read-write
+    ports:
+      - "127.0.0.1:3000:3000" # only the local TLS terminator reaches this
+    read_only: true # rootfs is immutable; writes go to /vault only
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+# Optional TLS terminator (auto HTTPS). Enable after editing deploy/caddy/Caddyfile:
+#   caddy:
+#     image: caddy:2-alpine
+#     restart: unless-stopped
+#     network_mode: host            # reaches mcp/webdav via their loopback mappings
+#     volumes:
+#       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+#       - ./caddy_data:/data
+
+# Prerequisites the container cannot create for you (see docs/http-docker-deployment.md Phase 4):
+#   1. /srv/obsidian-vault/.obsidian must exist, or startup fails with VAULT_NOT_INITIALIZED.
+#   2. chown -R 1001:1001 /srv/obsidian-vault (or align `user:` with the webdav uid).
+#   3. Exclude .obsidian-mcp/ and .trash/ from Remotely Save syncing.
+#   4. A TLS terminator (Caddy/Nginx) must proxy https://<MCP_PUBLIC_URL host> → 127.0.0.1:3000
+#      passing the original Host header through. Sample: deploy/caddy/Caddyfile.

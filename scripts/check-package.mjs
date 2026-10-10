@@ -18,7 +18,9 @@ try {
 } finally {
   await rm(cache, { recursive: true, force: true });
 }
-const report = JSON.parse(stdout)[0];
+// npm < 12 emits `[{...}]`; npm 12+ emits `{ "<name>": {...} }` keyed by package.
+const packed = JSON.parse(stdout);
+const report = Array.isArray(packed) ? packed[0] : Object.values(packed)[0];
 const files = report.files.map((entry) => entry.path).sort();
 const forbidden = files.filter(
   (file) =>

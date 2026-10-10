@@ -79,6 +79,8 @@ Network, removable, hidden, and synced locations are allowed because an explicit
 | `obsidian_remove_tags`      | Remove exact, nested, or wildcard-selected tags atomically.                   |
 | `obsidian_rename_tag`       | Rename a tag across the vault atomically.                                     |
 | `obsidian_manage_tags`      | Unified add/remove tag workflow using the same implementation.                |
+| `obsidian_recovery_list`    | List journaled transactions for a vault, newest first.                        |
+| `obsidian_recovery_restore` | Roll back a committed transaction with explicit confirmation.                 |
 
 All schemas are strict JSON Schema 2020-12 contracts generated from Zod. Mutating results include a transaction id; tool failures return `isError: true` with an actionable error code.
 
@@ -100,7 +102,7 @@ obsidian-mcp serve --vault work=/path \
   --recovery-max-bytes 536870912
 ```
 
-Inspect or restore a completed transaction while the MCP server is stopped:
+Agents can also inspect and restore through the tools themselves — `obsidian_recovery_list` and `obsidian_recovery_restore` (the restore requires `confirm_transaction_id` to repeat the transaction id exactly). While the MCP server is stopped, the CLI does the same:
 
 ```bash
 obsidian-mcp recovery list --vault work=/path
@@ -108,6 +110,22 @@ obsidian-mcp recovery restore --vault work=/path --id <transaction-id>
 ```
 
 Recovery refuses to overwrite content changed since the selected transaction. Permanent deletion snapshots are purged after commit and cannot be restored.
+
+## HTTP transport (Docker / remote clients)
+
+Instead of stdio, the server can serve Streamable HTTP for remote MCP clients. Tokens are read from the environment only, never from command arguments:
+
+```bash
+MCP_PUBLIC_URL=https://mcp.example.com \
+MCP_AUTH_TOKEN="$(openssl rand -hex 32)" \
+obsidian-mcp serve --http --host 127.0.0.1 --port 3000 --vault notes=/absolute/path/to/vault
+```
+
+- `MCP_PUBLIC_URL` and `MCP_AUTH_TOKEN` (≥ 32 characters) are required; startup fails fast otherwise. `MCP_ALLOW_UNAUTHENTICATED=1` exists for local development only.
+- Connect clients at `https://<your-host>/mcp` behind a TLS terminator with `Authorization: Bearer <token>`.
+- `GET /healthz` and `GET /readyz` (probes each vault for read and write access) answer without credentials for orchestrators.
+- Host and Origin headers are validated against the public hostname before the MCP handler; requests are rate limited per token (`MCP_RATE_LIMIT_PER_MINUTE`, default 120) and bodies capped (`MCP_MAX_BODY_BYTES`, default 16 MiB).
+- See `Dockerfile`, `docker-compose.yml`, and `docs/http-docker-deployment.md` for the single-host WebDAV co-deployment, including UID alignment and the `.obsidian`/`.obsidian-mcp` sync exclusions.
 
 ## Path and filesystem safety
 

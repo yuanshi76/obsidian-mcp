@@ -14,6 +14,11 @@ import { createListVaultsTool, TOOL_NAME as LIST_VAULTS } from "./list-vaults/in
 import { createManageTagsTool, TOOL_NAME as MANAGE_TAGS } from "./manage-tags/index.js";
 import { createMoveNoteTool, TOOL_NAME as MOVE_NOTE } from "./move-note/index.js";
 import { createReadNoteTool, TOOL_NAME as READ_NOTE } from "./read-note/index.js";
+import { createRecoveryListTool, TOOL_NAME as RECOVERY_LIST } from "./recovery-list/index.js";
+import {
+  createRecoveryRestoreTool,
+  TOOL_NAME as RECOVERY_RESTORE
+} from "./recovery-restore/index.js";
 import { createRemoveTagsTool, TOOL_NAME as REMOVE_TAGS } from "./remove-tags/index.js";
 import { createRenameTagTool, TOOL_NAME as RENAME_TAG } from "./rename-tag/index.js";
 import { createSearchVaultTool, TOOL_NAME as SEARCH_VAULT } from "./search-vault/index.js";
@@ -30,7 +35,9 @@ export const TOOL_NAMES = [
   ADD_TAGS,
   REMOVE_TAGS,
   RENAME_TAG,
-  MANAGE_TAGS
+  MANAGE_TAGS,
+  RECOVERY_LIST,
+  RECOVERY_RESTORE
 ] as const;
 
 export function createToolDefinitions(runtime: Runtime) {
@@ -46,7 +53,9 @@ export function createToolDefinitions(runtime: Runtime) {
     createAddTagsTool(runtime),
     createRemoveTagsTool(runtime),
     createRenameTagTool(runtime),
-    createManageTagsTool(runtime)
+    createManageTagsTool(runtime),
+    createRecoveryListTool(runtime),
+    createRecoveryRestoreTool(runtime)
   ] as const;
 }
 
@@ -64,4 +73,6 @@ export function registerTools(server: McpServer, runtime: Runtime): void {
   registerTool(server, definitions[9]);
   registerTool(server, definitions[10]);
   registerTool(server, definitions[11]);
+  registerTool(server, definitions[12]);
+  registerTool(server, definitions[13]);
 }
