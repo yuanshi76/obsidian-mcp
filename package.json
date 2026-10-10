@@ -54,13 +54,14 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.1.1",
+    "@modelcontextprotocol/server": "^2.3.1",
     "yaml": "^2.8.1",
     "zod": "^4.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
-    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.3.1",
     "@types/node": "^24.13.3",
     "eslint": "^9.0.0",
     "prettier": "^3.6.0",
